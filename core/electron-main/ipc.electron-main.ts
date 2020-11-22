@@ -37,6 +37,12 @@ class IPCServer<TContext = string>
     IChannelServer<TContext>,
     IDisposable {
 
+    // 服务端侧可访问的频道
+    private readonly channels = new Map<string, IServerChannel<TContext>>();
+
+    // 客户端和服务端的连接
+    private readonly _connections = new Set<Connection<TContext>>();
+
     private readonly _onDidChangeConnections = new Emitter<
       Connection<TContext>
     >();
@@ -51,6 +57,7 @@ class IPCServer<TContext = string>
       this._connections.forEach(ctx => result.push(ctx));
       return result;
     }
+
     dispose(): void {
       this.channels.clear();
       this._connections.clear();
@@ -97,12 +104,6 @@ class IPCServer<TContext = string>
         });
       });
     }
-
-    // 服务端侧可访问的频道
-    private readonly channels = new Map<string, IServerChannel<TContext>>();
-
-    // 客户端和服务端的连接
-    private readonly _connections = new Set<Connection<TContext>>();
 
   }
 
