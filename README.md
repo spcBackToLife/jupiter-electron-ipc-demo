@@ -7,6 +7,122 @@ yarn install
 yarn dev
 ```
 
+## 简介
+此项目是将 vscode 中的 ipc 通信机制完整的实现了一遍，大家可以看如上的启动方式，进行启动和体验。
+
+## 服务使用示例
+
+[创建一个windowSercice]
+
+```ts
+export class WindowService {
+
+  doSomething(): string {
+    console.log('do something and return done')
+    return 'done';
+  }
+}
+
+```
+
+[创建一个服务的频道]
+
+```ts
+import { IServerChannel } from "../core/common/ipc";
+import { WindowService } from "./windowService";
+import { Event } from '../base/event';
+
+export class WindowChannel implements IServerChannel {
+  constructor(
+    public readonly windowService: WindowService,
+  ) {}
+
+  listen(_: unknown, event: string): Event<any> {
+    // 暂时不支持
+    throw new Error(`Not support listen event currently: ${event}`);
+  }
+
+  call(_: unknown, command: string, arg?: any): Promise<any> {
+    switch (command) {
+      case 'doSomething':
+        return Promise.resolve(this.windowService.doSomething());
+
+      default:
+        return Promise.reject('无可调用服务！');
+    }
+  }
+}
+
+```
+
+[渲染进程-src/render/index.html]
+
+```ts
+<html>
+  <div>jupiter electron</div>
+  <script>
+    const { Client }  = require('../../core/electron-render/IPCClient');
+    const mainProcessConnection = new Client(`window_1`);
+    const channel = mainProcessConnection.getChannel('windowManager');
+    channel.call('doSomething').then((result) => console.log('result:', result));
+  </script>
+</html>
+
+```
+
+[主进程-src/main.ts]
+
+```ts
+import { app, BrowserWindow } from 'electron';
+import path from 'path';
+import { Server as ElectronIPCServer } from '../core/electron-main/ipc.electron-main';
+import { WindowChannel } from './windowServiceIpc';
+import { WindowService } from './windowService';
+
+app.on('ready', () => {
+  const electronIpcServer = new ElectronIPCServer();
+  electronIpcServer.registerChannel('windowManager',  new WindowChannel(new WindowService()))
+
+
+  const win = new BrowserWindow({
+    width: 1000,
+    height: 800,
+    webPreferences: {
+      nodeIntegration: true
+    }
+  });
+
+  console.log('render index html:', path.join(__dirname, 'render', 'index.html'));
+  win.loadFile(path.join(__dirname, 'render', 'index.html'));
+})
+
+```
+
+启动并运行一波：
+
+```ts
+"scripts": {
+  ...
+  "dev": "tsc && electron ./src/main.js",
+  ...
+},
+```
+
+启动：
+
+```ts
+  yarn dev
+```
+
+![image](https://user-images.githubusercontent.com/20703494/99907036-81ca1600-2d15-11eb-9bf0-e8aa12db3795.png)
+
+至此，我们实现了 vscode 的 ipc 机制，大家可以前往这里进行体验：
+
+[jupiter-electron-ipc-demo](https://github.com/spcBackToLife/jupiter-electron-ipc-demo/)
+
+
+
+## 模式介绍
 **你也可以在你的 Electron 中使用 Vscode 的通信机制：从零到一实现 Vscode 通信机制**
 
 
@@ -14,6 +130,7 @@ yarn dev
 `Electron`是多进程的，因此，在写应用的时候少不了的就是进程间的通信，尤其是主进程与渲染进程之间的通信。但是如果不好好设计通信机制，那么，在应用里的通信就会混乱不堪，无法管理，开发 `Electron` 的同学可能深有体会。
 
 我们举个例子，来看在 `传统 Electron`中和`Jupiter Electron`中通信的样子：
+
 
 ### 示例: 窗口发消息给主进程，做一件事情，并返回一个结果：“完成”。
 
@@ -123,14 +240,15 @@ const doSomething = (params) => {
 - 当你的「主进程」期望「渲染进程」做一件事情，并返回执行结果时，则「渲染进程」需要做的事情，则可以抽象成对应的服务，渲染进程负责提供服务。
 
 因此，我们可以设计成如下形式：
-![](https://tech-proxy.bytedance.net/tos/images/1606038086083_a6c382e4d77c34a7552a09f2a9e17f40.png)
+![image](https://user-images.githubusercontent.com/20703494/99906970-0ff1cc80-2d15-11eb-8101-7ea62690e7dc.png)
+
 
 > 服务端可以是「渲染进程」、也可以是「主进程」，取决于谁提供服务给谁。
 
 可以看到，服务端提供 n 个服务供客户端访问。但这样有一个问题，这里，服务端提供的服务，是所有客户端都能访问的，就会有问题，就好比：支付宝为所有用户提供了基础服务，比如：电费、税费、社保查询服务，但有些服务可能只有特定人群能访问，比如：优选100% 赚钱的基金服务。
 
 因此，我们这样的设计就无法满足这个要求，因此我们需要做一个调整：
-![](https://tech-proxy.bytedance.net/tos/images/1606038682993_08a370b9997b5473e370212960e1e953.png)
+![image](https://user-images.githubusercontent.com/20703494/99907010-4d565a00-2d15-11eb-8b0e-6bcf17b83c39.png)
 
 我们增加了 频道服务的概念，每个客户端基于频道来访问服务，比如：
 - 客户端1 访问了 频道服务1，客服端2 访问 频道服务2
@@ -144,7 +262,8 @@ const doSomething = (params) => {
 
 按照上述逻辑，的确会是这样，因此，为了解决这个问题，我们需要如下设计：
 
-![](https://tech-proxy.bytedance.net/tos/images/1606039758948_4e8ed7445f492045924b53a2600aa346.png)
+![image](https://user-images.githubusercontent.com/20703494/99907005-44658880-2d15-11eb-9be9-3d87aa715dff.png)
+
 
 我们在服务端，新加一个概念，叫连接（Connection），客户端初始化的时候，可以发起通信连接，此时就会去新建一个频道服务，并存储在服务端，客户端下一次发起服务访问请求的时候，直接去获取频道服务，去那相应的服务进行执行。
 
@@ -156,7 +275,7 @@ const doSomething = (params) => {
 这好像是「服务端」和「客户端」互换了身份。如何让这两种情况同时存在呢？
 
 我们可以做如下设计：
-![](https://tech-proxy.bytedance.net/tos/images/1606040628300_33957d6c54a1d9c7b6543a662db00db3.png)
+![image](https://user-images.githubusercontent.com/20703494/99907014-56472b80-2d15-11eb-8425-57de6d12fe39.png)
 
 我们在服务端连接上增加「频道客户端」，在客户端增加「频道服务」，从而客户端可访问服务端频道服务中的服务，在服务端，也可以调用客户端里频道服务的服务，从而实现上述问题。
 
@@ -205,6 +324,11 @@ const doSomething = (params) => {
 - 消息通信协议设计与实现
 - 服务端频道 -> ServerChannel
 - 频道服务端 -> ChannelServer
+- 频道客户端 -> ChannelClient
+- 连接 -> Connection
+- 客户端 -> IPCClient
+- 服务端 -> IPCServer
+
 
 
 #### 消息通信协议设计与实现
@@ -865,5 +989,409 @@ private sendBuffer(message: VSBuffer): void {
 }
 ```
 
+#### 定义一个连接: Connection
+根据上面的设计图所示，如下：
+```ts
+export interface Client<TContext> {
+  readonly ctx: TContext;
+}
+export interface Connection<TContext> extends Client<TContext> {
+  readonly channelServer: ChannelServer<TContext>; // 频道服务端
+  readonly channelClient: ChannelClient; // 频道客户端
+}
+```
+
+#### 定义服务端：IPCServer
+
+```ts
+class IPCServer<TContext = string>
+  implements
+    IChannelServer<TContext>,
+    IDisposable {
+
+    // 服务端侧可访问的频道
+    private readonly channels = new Map<string, IServerChannel<TContext>>();
+
+    // 客户端和服务端的连接
+    private readonly _connections = new Set<Connection<TContext>>();
+
+    private readonly _onDidChangeConnections = new Emitter<
+      Connection<TContext>
+    >();
+
+    // 连接改变的时候触发得事件监听
+    readonly onDidChangeConnections: Event<Connection<TContext>> = this
+      ._onDidChangeConnections.event;
+
+    // 所有连接
+    get connections(): Array<Connection<TContext>> {
+      const result: Array<Connection<TContext>> = [];
+      this._connections.forEach(ctx => result.push(ctx));
+      return result;
+    }
+    // 释放所有监听
+    dispose(): void {
+      this.channels.clear();
+      this._connections.clear();
+      this._onDidChangeConnections.dispose();
+    }
+ }
+```
+
+前面我们有提到「消息通信协议」，即：
+- 在 'ipc:message' 频道收发消息
+- 发送 'ipc:hello' 频道消息开始建立链接
+- 断开连接的时，发送一个消息到 'ipc:disconnect' 频道
+
+可能大家会有疑问，为什么我们的通信消息还需要建立连接，这意味着是长连接吗？
+
+其实不是长连接，还是一次性通信的，其实流程是这样的：
+- 一开始渲染进程发送 'ipc:hello'消息，打算后续可能会在 'ipc:message' 进行通信, 请主进程做好准备。
+- 主进程接受到 'ipc:hello' 消息，发现是这个渲染进程**第一次**需要 'ipc:message' 频道通信，就开始监听这个频道消息。
+- 当渲染进程卸载的时候，发出了 'ipc:disconnect' 消息。
+- 主进程接收到渲染进程的 'ipc:disconnect' 消息。 就取消了在 'ipc:message' 的监听。
+
+这里有一个注意点就是，'ipc:hello' 其实是在主进程 IPCServer 实例化的时候就建立的一个监听，用于了解每一个渲染进程需要的通信情况。
+
+因此，这个通信机制的完整流程其实是这样：
+
+TODO
+
+> 这里有个很细节的地方，就是所有的渲染进程和主进程的通信都是通过 'ipc:message' 进行通信，那原本发送给窗口 A 的消息，窗口 B 也会收到？当然不会！，请听后续讲解。
+> 上面的图只是简单的演示，当然连接会有重试机制。
+
+接下来，我们开始实现上面的流程。
+
+首先，定义一个客户端连接事件接口：
+```ts
+export interface ClientConnectionEvent {
+  protocol: IMessagePassingProtocol; // 消息通信协议
+  onDidClientDisconnect: Event<void>; // 断开连接事件
+}
+
+```
+
+接下来，我们实现一个监听客户端连接的方法 `getOnDidClientConnect`
+
+```ts
+export class IPCServer<TContext = string>
+  implements
+    IChannelServer<TContext>,
+    IDisposable {
+    private static getOnDidClientConnect(): Event<ClientConnectionEvent> {
+      const onHello = Event.fromNodeEventEmitter<Electron.WebContents>(
+        ipcMain,
+        'ipc:hello',
+        ({ sender }) => sender,
+      );
+      ...
+    }
+
+    constructor(onDidClientConnect: Event<ClientConnectionEvent>) {
+      onDidClientConnect(({ protocol, onDidClientDisconnect }) => {
+        ...
+      }
+    }
+}
+```
+
+通过流程图，我们知道在 IPCServer 实例化的时候，我们会注册 'ipc:hello' 消息监听， 我们可以把收到此消息作为建立连接的标志。
+
+> 如果我发送多个 onHello 消息，就连接了多次？当然不是，请听下面分析。
+
+首先简单解释下这句话，更详细的解析会在后续的 vscode 事件机制中进行解读：
+
+```ts
+const onHello = Event.fromNodeEventEmitter<Electron.WebContents>(
+    ipcMain,
+    'ipc:hello',
+    ({ sender }) => sender,
+);
+```
+
+这个的含义，其实就是定义了一个 ipc:hello 的监听，比如原来，你注册监听 ipc:hello 可能是这样：
+
+```ts
+const handler = (e) => {
+  console.log('sender:',  e.sender.id);
+};
+ipcMain.on('ipc:hello', handler)
+
+// 移除监听
+ipcMain.removeListener('ipc:hello', handler);
+```
+
+而现在是这样的:
+```ts
+const onHello = Event.fromNodeEventEmitter<Electron.WebContents>(
+    ipcMain,
+    'ipc:hello',
+    ({ sender }) => sender,
+);
+const listener = onHello((sender) => {
+  console.log('sender');
+});
+
+// 移除监听
+listener.dispose();
+```
+这样的写法有着诸多的好处，以及说 Event.fromNodeEventEmitter 是怎样的实现，会在后续持续更新。
+
+接下来，我们来继续实现 `getOnDidClientConnect()`
+
+```ts
+export class IPCServer<TContext = string>
+  implements
+    IChannelServer<TContext>,
+    IDisposable {
+    private static getOnDidClientConnect(): Event<ClientConnectionEvent> {
+      const onHello = Event.fromNodeEventEmitter<Electron.WebContents>(
+        ipcMain,
+        'ipc:hello',
+        ({ sender }) => sender,
+      );
+      return Event.map(onHello, webContents => {
+        const { id } = webContents;
+        ...
+        const onMessage = createScopedOnMessageEvent(id, 'ipc:message') as Event<
+          VSBuffer
+        >;
+        const onDidClientDisconnect = Event.any(
+          Event.signal(createScopedOnMessageEvent(id, 'ipc:disconnect')),
+          onDidClientReconnect.event,
+        );
+        const protocol = new Protocol(webContents, onMessage);
+        return { protocol, onDidClientDisconnect };
+      });
+    }
+    ...
+}
+```
+我们前面有讲解到，我们定义了 onHello 之后，去监听事件的时候是这样：
+
+```ts
+const listener = onHello((sender) => {
+  console.log('sender');
+});
+```
+
+可以看到，针对所有 ipc:hello 的消息的消息参数都被过滤成了 sender，而不是原先的 e。
+而：
+```ts
+getOnDidClientConnect(): Event<ClientConnectionEvent> {
+  return Event.map(onHello, webContents => {
+    ...
+    return { protocol, onDidClientDisconnect };
+  })
+}
+```
+则将 onHello 的参数过滤成了：{ protocol, onDidClientDisconnect }。 相当于在 onHello 事件上再一次使用装饰者模式装饰参数
+
+可能有点蒙，我再横向对比下，经过**两次装饰**后
+
+```ts
+// 第一次装饰, 事件参数 e 变成了参数 sender
+const onHello = Event.fromNodeEventEmitter<Electron.WebContents>(
+  ipcMain,
+  'ipc:hello',
+  ({ sender }) => sender,
+);
+
+// 第二次装饰 事件参数 sender(webContents) 变成了 { protocol, onDidClientDisconnect }
+getOnDidClientConnect(): Event<ClientConnectionEvent> {
+  return Event.map(onHello, webContents => {
+    ...
+    return { protocol, onDidClientDisconnect };
+  })
+}
+
+```
+
+从原来的:
+```ts
+const handler = (e) => {
+  console.log('sender:', e.sender.id);
+};
+ipcMain.on('ipc:hello', handler)
+
+// 移除监听
+ipcMain.removeListener('ipc:hello', handler);
+```
+
+就变成了:
+```ts
+
+// 仍然是 ipc:hello 事件，只不过从原来的消息参数 e 变成了 {protocol, onDidClientDisconnect}
+const onDidClientConnnect = getOnDidClientConnect();
+const listener = onDidClientConnnect(({protocol, onDidClientDisconnect}) => {
+  ...
+});
+
+// 解除监听
+listener.dispose();
+
+```
+
+好，接下来我们来分析下 `{ protocol, onDidClientDisconnect }` 这两个参数。
+
+protocol 即我们在上面定义的通信协议，包含了：
+
+- sender 是发送对象的接口，只要满足存在一个方法：send 即可。
+- 协议规定：
+  - 发送 'ipc:hello' 频道消息开始建立链接
+  - 在 'ipc:message' 频道收发消息
+  - 断开连接的时，发送一个消息到 'ipc:disconnect' 频道
+
+因此：
+
+```ts
+  const onMessage = createScopedOnMessageEvent(id, 'ipc:message') as Event<
+    VSBuffer
+  >;
+  const protocol = new Protocol(webContents, onMessage);
+```
+- webContents 即为 sender：发送消息的对象。
+- onMessage 即为在 ipc:message 频道监听消息的方法
+
+这里的 onMessage 可以简单理解为通过封装后的消息监听，即从原先的：
+```ts
+ipcMain.on('ipc:message', (e, message) => {
+  console.log('message:', message);
+})
+```
+变成了:
+```ts
+onMessage((message) => {
+  console.log('message:', message);
+})
+```
+
+> - 有个很显著的特征就是事件参数由原来的（e, message）变成了 (message)
+> - message被使用 buffer 压缩，这也是通信优化的一部分。
+> - 当然除此以外，createScopedOnMessageEvent 还有一个能力，是进行了过滤，前面有提到，所有渲染进程，都通过
+`ipc:message` 频道通信，那如何避免发给渲染进程A的消息，渲染进程B也收到了呢，就是在这里过滤的，过滤后，渲染进程A只会收到给A的消息。
+
+`onDidClientDisconnect` 同理，是 'ipc:disconnect' 消息监听，就不做解释了。
+
+接下来，我们来继续解析 IPCServer 如何在实例化的时候注册的 ipc:hello 监听
+
+```ts
+class IPCServer<TContext = string>
+  implements
+    IChannelServer<TContext>,
+    IDisposable {
+      constructor(onDidClientConnect: Event<ClientConnectionEvent>) {
+        onDidClientConnect(({ protocol, onDidClientDisconnect }) => {
+          const onFirstMessage = Event.once(protocol.onMessage);
+          // 第一次接收消息
+          onFirstMessage(msg => {
+            const reader = new BufferReader(msg);
+            const ctx = deserialize(reader) as TContext; // 后续解释
+
+            const channelServer = new ChannelServer(protocol, ctx);
+            const channelClient = new ChannelClient(protocol);
+
+            this.channels.forEach((channel, name) =>
+              channelServer.registerChannel(name, channel),
+            );
+
+            const connection: Connection<TContext> = {
+              channelServer,
+              channelClient,
+              ctx,
+            };
+            this._connections.add(connection);
+            // this._onDidChangeConnections.fire(connection);
+
+            onDidClientDisconnect(() => {
+              channelServer.dispose();
+              channelClient.dispose();
+              this._connections.delete(connection);
+            });
+          })
+        }
+      }
+}
+```
+在第一次接收到 ipc:message 的时候，我们会新建一个连接： connection；并在收到：ipc:disconnect 的时候，删除连接、移除监听。
 
 
+这里的重点方法是注册频道，正如上面设计图中所示，每个新增的频道，都会在已有的连接中添加改频道：
+```ts
+registerChannel(
+  channelName: string,
+  channel: IServerChannel<TContext>,
+): void {
+  this.channels.set(channelName, channel);
+
+  // 同时在所有的连接中，需要注册频道
+  this._connections.forEach(connection => {
+    connection.channelServer.registerChannel(channelName, channel);
+  });
+}
+```
+
+服务端准备好了，我们需要实现客户端的细节：
+```ts
+export class IPCClient<TContext = string>
+  implements IChannelClient, IChannelServer<TContext>, IDisposable {
+  private readonly channelClient: ChannelClient;
+
+  private readonly channelServer: ChannelServer<TContext>;
+
+  constructor(protocol: IMessagePassingProtocol, ctx: TContext) {
+
+    const writer = new BufferWriter();
+    serialize(writer, ctx);
+    // 发送服务注册消息 ctx 即服务名。
+    protocol.send(writer.buffer);
+
+    this.channelClient = new ChannelClient(protocol);
+    this.channelServer = new ChannelServer(protocol, ctx);
+  }
+
+  getChannel<T extends IChannel>(channelName: string): T {
+    return this.channelClient.getChannel(channelName);
+  }
+
+  registerChannel(
+    channelName: string,
+    channel: IServerChannel<TContext>,
+  ): void {
+    // 注册频道
+    this.channelServer.registerChannel(channelName, channel);
+  }
+
+  dispose(): void {
+    this.channelClient.dispose();
+    this.channelServer.dispose();
+  }
+}
+```
+
+```ts
+export class Client extends IPCClient implements IDisposable {
+  private readonly protocol: Protocol;
+
+  private static createProtocol(): Protocol {
+    const onMessage = Event.fromNodeEventEmitter<VSBuffer>(
+      ipcRenderer,
+      'ipc:message',
+      (_, message: Buffer) => VSBuffer.wrap(message),
+    );
+    ipcRenderer.send('ipc:hello');
+    return new Protocol(ipcRenderer, onMessage);
+  }
+
+  constructor(id: string) {
+    const protocol = Client.createProtocol();
+    super(protocol, id);
+    this.protocol = protocol;
+  }
+
+  dispose(): void {
+    this.protocol.dispose();
+  }
+}
+
+```
