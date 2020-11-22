@@ -1,4 +1,14 @@
+## 启动
+
+```bash
+git clone git@github.com:spcBackToLife/jupiter-electron-ipc-demo.git
+cd jupiter-electron-ipc-demo
+yarn install
+yarn dev
+```
+
 **你也可以在你的 Electron 中使用 Vscode 的通信机制：从零到一实现 Vscode 通信机制**
+
 
 
 `Electron`是多进程的，因此，在写应用的时候少不了的就是进程间的通信，尤其是主进程与渲染进程之间的通信。但是如果不好好设计通信机制，那么，在应用里的通信就会混乱不堪，无法管理，开发 `Electron` 的同学可能深有体会。
