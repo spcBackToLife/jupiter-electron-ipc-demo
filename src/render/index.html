@@ -1,0 +1,9 @@
+<html>
+  <div>jupiter electron</div>
+  <script>
+    const { Client }  = require('../../core/electron-render/IPCClient');
+    const mainProcessConnection = new Client(`window_1`);
+    const channel = mainProcessConnection.getChannel('windowManager');
+    channel.call('doSomething').then((result) => console.log('result:', result));
+  </script>
+</html>

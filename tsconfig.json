@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "strictNullChecks": true,
+    "module": "commonjs",
+    "esModuleInterop": true,
+    "importHelpers": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "es5",
+    "lib": [
+      "dom",
+      "ES2019.Symbol",
+      "ES2020.Symbol.WellKnown",
+      "es2017.object"
+    ]
+  },
+  "include": [
+    "src", // write ts in src, you can define your own dir
+    "examples",
+    "."
+  ]
+}
